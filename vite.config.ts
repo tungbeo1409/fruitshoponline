@@ -4,10 +4,9 @@
   import path from 'path';
 
   export default defineConfig({
-    // Base path for GitHub Pages (thay đổi thành tên repo của bạn nếu cần)
-    // Nếu repo là username.github.io thì để base: '/'
-    // Nếu repo là username.github.io/repo-name thì để base: '/repo-name/'
-    base: '/',
+    // Base path for GitHub Pages
+    // Repository: fruitshoponline -> base: '/fruitshoponline/'
+    base: '/fruitshoponline/',
     plugins: [react()],
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
