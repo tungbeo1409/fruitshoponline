@@ -1,17 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from './ui/dialog';
 import { Label } from './ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Search, Plus, Edit, Users, Filter, Loader2, Eye, EyeOff, RotateCcw, Phone, Mail, MapPin, FileText, DollarSign, TrendingUp, TrendingDown, CheckCircle, History, ShoppingBag, Calendar } from 'lucide-react';
+import { Search, Plus, Edit, Users, Filter, Loader2, Eye, EyeOff, RotateCcw, Phone, Mail, MapPin, FileText, DollarSign, TrendingUp, TrendingDown, CheckCircle, History, ShoppingBag, Calendar, Wallet, Building2, RefreshCw, QrCode, Receipt, Printer, MoreVertical } from 'lucide-react';
 import { ImageCropper } from './ImageCropper';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useAlert } from './AlertDialog';
 import { useCustomers, Customer } from '../hooks/useCustomers';
-import { useInvoices } from '../hooks/useInvoices';
+import { useInvoices, Invoice } from '../hooks/useInvoices';
+import { useShopInfo, BankAccount } from '../contexts/ShopInfoContext';
+import { Card } from './ui/card';
+import { Badge } from './ui/badge';
+import { InvoiceReceipt } from './InvoiceReceipt';
 
 export function CustomerManagement() {
   const { alert, AlertComponent } = useAlert();
@@ -19,6 +24,7 @@ export function CustomerManagement() {
   // Firestore hooks
   const { customers, loading, addCustomer, updateCustomer } = useCustomers();
   const { invoices, updateInvoice } = useInvoices();
+  const { shopInfo } = useShopInfo();
   
   // State
   const [searchTerm, setSearchTerm] = useState('');
@@ -43,6 +49,83 @@ export function CustomerManagement() {
   const [debtNote, setDebtNote] = useState(''); // Ghi chú dư nợ
   const [isDebtHistoryDialogOpen, setIsDebtHistoryDialogOpen] = useState(false);
   const [selectedDebtInvoices, setSelectedDebtInvoices] = useState<string[]>([]); // Danh sách hóa đơn được chọn để trả nợ
+  const [debtPaymentMethod, setDebtPaymentMethod] = useState<'cash' | 'transfer'>('cash');
+  const [selectedBankAccount, setSelectedBankAccount] = useState<BankAccount | null>(null);
+  const [isQRDialogOpen, setIsQRDialogOpen] = useState(false);
+  const [banksList, setBanksList] = useState<any[]>([]);
+  const [isPurchaseHistoryDialogOpen, setIsPurchaseHistoryDialogOpen] = useState(false);
+  const [selectedCustomerForHistory, setSelectedCustomerForHistory] = useState<Customer | null>(null);
+  const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<Invoice | null>(null);
+  const [isInvoiceDetailDialogOpen, setIsInvoiceDetailDialogOpen] = useState(false);
+  const [printInvoice, setPrintInvoice] = useState<Invoice | null>(null);
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+
+  // Load banks list from API
+  useEffect(() => {
+    const fetchBanks = async () => {
+      try {
+        const response = await fetch('https://qr.sepay.vn/banks.json');
+        const data = await response.json();
+        if (data.data && Array.isArray(data.data)) {
+          setBanksList(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching banks:', error);
+      }
+    };
+    fetchBanks();
+  }, []);
+
+  // Get default bank account
+  const defaultBankAccount = useMemo(() => {
+    if (!shopInfo?.bankAccounts || !Array.isArray(shopInfo.bankAccounts)) return null;
+    return shopInfo.bankAccounts.find(b => b.isDefault) || shopInfo.bankAccounts[0] || null;
+  }, [shopInfo]);
+
+  // Initialize selected bank account when payment method changes to transfer
+  useEffect(() => {
+    if (debtPaymentMethod === 'transfer' && defaultBankAccount) {
+      const isSelectedAccountValid = selectedBankAccount && 
+        shopInfo?.bankAccounts?.some(acc => acc.id === selectedBankAccount.id);
+      if (!selectedBankAccount || !isSelectedAccountValid) {
+        setSelectedBankAccount(defaultBankAccount);
+      }
+    }
+  }, [debtPaymentMethod, defaultBankAccount, selectedBankAccount, shopInfo]);
+
+  // Get bank icon URL
+  const getBankIconUrl = (bankName: string): string => {
+    const bank = banksList.find(b => b.name === bankName);
+    if (bank && bank.short_name) {
+      return `https://img.vietqr.io/${bank.short_name}/compact.png`;
+    }
+    return '';
+  };
+
+  // Get QR code URL
+  const getQRCodeUrl = (account: BankAccount, amount: number, description?: string): string => {
+    let bankCode = account.bankCode;
+    if (!bankCode || bankCode === '') {
+      const bank = banksList.find(b => b.name === account.bankName);
+      if (bank && bank.short_name) {
+        bankCode = bank.short_name;
+      } else {
+        return '';
+      }
+    }
+
+    const shopName = shopInfo?.name || 'Shop';
+    const desc = description || `Thanh toán dư nợ ${shopName}`;
+
+    const params = new URLSearchParams({
+      acc: account.accountNumber,
+      bank: bankCode || '',
+      amount: amount.toString(),
+      des: desc,
+    });
+
+    return `https://qr.sepay.vn/img?${params.toString()}`;
+  };
 
   // Filter and sort customers
   const filteredCustomers = customers
@@ -316,11 +399,45 @@ export function CustomerManagement() {
                       <h3 className="font-semibold text-lg text-gray-900 truncate">
                         {customer.name}
                       </h3>
-                      {customer.isActive === false && (
-                        <span className="px-2 py-1 text-xs bg-orange-100 text-orange-600 rounded flex-shrink-0">
-                          Dừng hoạt động
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {customer.isActive === false && (
+                          <span className="px-2 py-1 text-xs bg-orange-100 text-orange-600 rounded">
+                            Dừng hoạt động
+                          </span>
+                        )}
+                        {customer.isActive !== false && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                              >
+                                <MoreVertical size={16} className="text-gray-500" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedCustomerForHistory(customer);
+                                  setIsPurchaseHistoryDialogOpen(true);
+                                }}
+                              >
+                                <Receipt size={16} className="mr-2" />
+                                Lịch sử mua hàng
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDeactivate(customer.id)}
+                                variant="destructive"
+                              >
+                                <EyeOff size={16} className="mr-2" />
+                                Dừng hoạt động
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -388,11 +505,11 @@ export function CustomerManagement() {
                   {/* Debt Status Badge */}
                   {(() => {
                     const debt = customer.debtAmount;
-                    if (debt === undefined) {
+                    if (debt === undefined || debt === 0) {
                       return (
-                        <div className="flex items-center gap-2 text-sm text-gray-500 mt-2 pt-2 border-t border-gray-100">
-                          <DollarSign size={16} className="text-gray-400" />
-                          <span>Chưa quản lý nợ</span>
+                        <div className="flex items-center gap-2 text-sm text-green-700 mt-2 pt-2 border-t border-green-100 bg-green-50 px-2 py-1 rounded">
+                          <CheckCircle size={16} className="text-green-600" />
+                          <span className="font-semibold">Không có dư nợ</span>
                         </div>
                       );
                     } else if (debt > 0) {
@@ -402,18 +519,11 @@ export function CustomerManagement() {
                           <span className="font-semibold">Nợ: {debt.toLocaleString('vi-VN')}₫</span>
                         </div>
                       );
-                    } else if (debt < 0) {
+                    } else {
                       return (
                         <div className="flex items-center gap-2 text-sm text-blue-600 mt-2 pt-2 border-t border-blue-100 bg-blue-50 px-2 py-1 rounded">
                           <TrendingDown size={16} />
                           <span className="font-semibold">Thiếu nợ: {Math.abs(debt).toLocaleString('vi-VN')}₫</span>
-                        </div>
-                      );
-                    } else {
-                      return (
-                        <div className="flex items-center gap-2 text-sm text-green-600 mt-2 pt-2 border-t border-green-100 bg-green-50 px-2 py-1 rounded">
-                          <CheckCircle size={16} />
-                          <span className="font-semibold">Đã hết nợ</span>
                         </div>
                       );
                     }
@@ -433,47 +543,34 @@ export function CustomerManagement() {
                       Hoạt động lại
                     </Button>
                   ) : (
-                    <>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleOpenCustomerDialog(customer)}
-                          className="flex-1 gap-1"
-                        >
-                          <Edit size={14} />
-                          Sửa
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeactivate(customer.id)}
-                          className="flex-1 gap-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                        >
-                          <EyeOff size={14} />
-                          Dừng
-                        </Button>
-                      </div>
+                    <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          setSelectedCustomerForDebt(customer);
-                          setDebtAmount('');
-                          // Nếu không có nợ hoặc nợ = 0, mặc định chọn "Thêm nợ"
-                          if (customer.debtAmount === undefined || customer.debtAmount <= 0) {
-                            setDebtAction('add');
-                          } else {
-                            setDebtAction('pay');
-                          }
-                          setIsDebtDialogOpen(true);
-                        }}
-                        className="w-full gap-1 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                        onClick={() => handleOpenCustomerDialog(customer)}
+                        className="flex-1 gap-1"
                       >
-                        <DollarSign size={14} />
-                        Quản lý dư nợ
+                        <Edit size={14} />
+                        Sửa
                       </Button>
-                    </>
+                      {/* Chỉ hiển thị nút "Quản lý dư nợ" nếu khách hàng có nợ */}
+                      {(customer.debtAmount !== undefined && customer.debtAmount > 0) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedCustomerForDebt(customer);
+                            setDebtAmount('');
+                            setDebtAction('pay');
+                            setIsDebtDialogOpen(true);
+                          }}
+                          className="flex-1 gap-1 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                        >
+                          <DollarSign size={14} />
+                          Quản lý dư nợ
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -570,7 +667,7 @@ export function CustomerManagement() {
 
       {/* Debt Management Dialog */}
       <Dialog open={isDebtDialogOpen} onOpenChange={setIsDebtDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="!max-w-[95vw] !w-auto !sm:max-w-[95vw] max-h-[90vh] overflow-y-auto" style={{ width: 'auto', maxWidth: '95vw' }}>
           <DialogHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -611,9 +708,11 @@ export function CustomerManagement() {
             );
 
             return (
-              <div className="space-y-4 py-4">
-                {/* Current Debt Status */}
-                <div className="p-4 rounded-lg border-2">
+              <div className="flex gap-6 py-4">
+                {/* Left Column - Debt Management Form */}
+                <div className="flex-1 space-y-4 min-w-0">
+                  {/* Current Debt Status */}
+                  <Card className="p-4">
                   {isNewDebt ? (
                     <div className="text-center">
                       <DollarSign size={32} className="mx-auto text-gray-400 mb-2" />
@@ -644,7 +743,7 @@ export function CustomerManagement() {
                       <p className="text-sm text-gray-500 mt-1">Số dư nợ: 0₫</p>
                     </div>
                   )}
-                </div>
+                  </Card>
 
                  {/* Debt Invoices Selection (if there are debt invoices) */}
                  {debtInvoices.length > 0 && (
@@ -833,7 +932,7 @@ export function CustomerManagement() {
                               {newDebt.toLocaleString('vi-VN')}₫
                             </p>
                             <p className="text-xs text-red-600 mt-1 font-semibold">
-                              ⚠️ Số tiền trả nợ không được vượt quá số nợ hiện tại ({currentDebt.toLocaleString('vi-VN')}₫)!
+                              ⚠️ Số tiền trả nợ không được vượt quá số nợ hiện tại ({(currentDebt || 0).toLocaleString('vi-VN')}₫)!
                             </p>
                           </>
                         );
@@ -858,6 +957,158 @@ export function CustomerManagement() {
                     })()}
                   </div>
                 )}
+                </div>
+
+                {/* Right Column - Payment Method & QR Code (only show when paying debt) */}
+                {debtAction === 'pay' && (
+                  <div className="w-[400px] space-y-6 flex-shrink-0">
+                    {/* Payment Method Selection */}
+                    <div>
+                      <Label className="mb-3 block font-semibold">Phương thức thanh toán</Label>
+                      <div className="space-y-3">
+                        <div
+                          onClick={() => setDebtPaymentMethod('cash')}
+                          className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all ${
+                            debtPaymentMethod === 'cash' 
+                              ? 'bg-green-100 border-2 border-green-500 shadow-md ring-2 ring-green-200' 
+                              : 'bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                            debtPaymentMethod === 'cash' 
+                              ? 'border-green-600 bg-green-600 shadow-sm' 
+                              : 'border-gray-400'
+                          }`}>
+                            {debtPaymentMethod === 'cash' && (
+                              <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 flex-1">
+                            <Wallet className={debtPaymentMethod === 'cash' ? 'text-green-700' : 'text-green-600'} size={20} />
+                            <div>
+                              <p className={`font-medium ${debtPaymentMethod === 'cash' ? 'text-green-900' : 'text-gray-900'}`}>
+                                Tiền mặt
+                              </p>
+                              <p className={`text-xs ${debtPaymentMethod === 'cash' ? 'text-green-700' : 'text-gray-500'}`}>
+                                Thanh toán bằng tiền mặt
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div
+                          onClick={() => {
+                            setDebtPaymentMethod('transfer');
+                            if (!selectedBankAccount && defaultBankAccount) {
+                              setSelectedBankAccount(defaultBankAccount);
+                            }
+                          }}
+                          className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all ${
+                            debtPaymentMethod === 'transfer' 
+                              ? 'bg-purple-100 border-2 border-purple-500 shadow-md ring-2 ring-purple-200' 
+                              : 'bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                            debtPaymentMethod === 'transfer' 
+                              ? 'border-purple-600 bg-purple-600 shadow-sm' 
+                              : 'border-gray-400'
+                          }`}>
+                            {debtPaymentMethod === 'transfer' && (
+                              <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 flex-1">
+                            <Building2 className={debtPaymentMethod === 'transfer' ? 'text-purple-700' : 'text-purple-600'} size={20} />
+                            <div>
+                              <p className={`font-medium ${debtPaymentMethod === 'transfer' ? 'text-purple-900' : 'text-gray-900'}`}>
+                                Chuyển khoản
+                              </p>
+                              <p className={`text-xs ${debtPaymentMethod === 'transfer' ? 'text-purple-700' : 'text-gray-500'}`}>
+                                Chuyển khoản ngân hàng
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* QR Code Display */}
+                    {debtPaymentMethod === 'transfer' && selectedBankAccount && debtAmount && !isNaN(Number(debtAmount)) && Number(debtAmount) > 0 && (
+                      <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-lg">
+                        <div className="flex items-center justify-between mb-3">
+                          <Label className="font-semibold text-purple-900">Mã QR Thanh Toán</Label>
+                          {shopInfo?.bankAccounts && shopInfo.bankAccounts.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setIsQRDialogOpen(true)}
+                              className="text-xs"
+                            >
+                              <RefreshCw size={12} className="mr-1" />
+                              Đổi QR
+                            </Button>
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <div 
+                            className={`bg-white p-3 rounded-lg border-4 border-purple-400 shadow-lg inline-block ${
+                              shopInfo?.bankAccounts && shopInfo.bankAccounts.length > 1 
+                                ? 'cursor-pointer hover:border-purple-500 hover:shadow-xl transition-all' 
+                                : ''
+                            }`}
+                            onClick={() => {
+                              if (shopInfo?.bankAccounts && shopInfo.bankAccounts.length > 1) {
+                                setIsQRDialogOpen(true);
+                              }
+                            }}
+                            title={shopInfo?.bankAccounts && shopInfo.bankAccounts.length > 1 ? 'Click để đổi QR code' : ''}
+                          >
+                            {(() => {
+                              const qrUrl = getQRCodeUrl(selectedBankAccount, Number(debtAmount));
+                              return qrUrl ? (
+                                <img
+                                  src={qrUrl}
+                                  alt="QR Code"
+                                  className="w-60 h-60 border-2 border-gray-300 rounded"
+                                  onError={(e) => {
+                                    console.error('QR Code image failed to load');
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-60 h-60 flex items-center justify-center text-red-500 text-xs p-2 text-center border-2 border-red-300 rounded">
+                                  Không thể tạo QR code. Vui lòng kiểm tra lại thông tin ngân hàng trong cài đặt.
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          <div className="mt-3 space-y-1 text-sm">
+                            <div className="flex items-center gap-2 justify-center">
+                              {getBankIconUrl(selectedBankAccount.bankName) && (
+                                <img 
+                                  src={getBankIconUrl(selectedBankAccount.bankName)} 
+                                  alt={selectedBankAccount.bankName}
+                                  className="w-6 h-6 object-contain"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              )}
+                              <p className="font-medium text-purple-900">{selectedBankAccount.bankName}</p>
+                            </div>
+                            <p className="text-purple-700 font-mono">{selectedBankAccount.accountNumber}</p>
+                            <p className="text-purple-600">{selectedBankAccount.accountHolder}</p>
+                            <p className="text-purple-800 font-bold mt-2">Số tiền: {Number(debtAmount).toLocaleString('vi-VN')}₫</p>
+                            {shopInfo?.bankAccounts && shopInfo.bankAccounts.length > 1 && (
+                              <p className="text-xs text-purple-600 mt-2 italic">Click vào QR code để đổi</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -872,6 +1123,8 @@ export function CustomerManagement() {
                 setDebtAction('pay');
                 setDebtNote('');
                 setSelectedDebtInvoices([]);
+                setDebtPaymentMethod('cash');
+                setSelectedBankAccount(null);
               }}
             >
               Hủy
@@ -963,18 +1216,6 @@ export function CustomerManagement() {
 
                   // Nếu có hóa đơn được chọn và đang trả nợ, cập nhật các hóa đơn đó
                   if (debtAction === 'pay' && selectedDebtInvoices.length > 0) {
-                    // Lọc các hóa đơn chưa được trả nợ (paymentMethod vẫn là 'debt')
-                    const unpaidDebtInvoices = selectedDebtInvoices.filter(invoiceId => {
-                      const inv = invoices.find(i => i.id === invoiceId);
-                      return inv && inv.paymentMethod === 'debt';
-                    });
-                    
-                    // Tính tổng tiền của các hóa đơn chưa được trả nợ
-                    const selectedInvoicesTotal = unpaidDebtInvoices.reduce((sum, invoiceId) => {
-                      const inv = invoices.find(i => i.id === invoiceId);
-                      return sum + (inv?.total || 0);
-                    }, 0);
-                    
                     // Cập nhật paymentMethod của các hóa đơn được chọn từ 'debt' sang 'cash'
                     for (const invoiceId of selectedDebtInvoices) {
                       try {
@@ -1030,6 +1271,8 @@ export function CustomerManagement() {
                   setDebtAction('pay');
                   setDebtNote('');
                   setSelectedDebtInvoices([]);
+                  setDebtPaymentMethod('cash');
+                  setSelectedBankAccount(null);
                 } catch (error: any) {
                   console.error('Error updating debt:', error);
                   await alert({
@@ -1210,6 +1453,366 @@ export function CustomerManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* QR Code Selection Dialog */}
+      <Dialog open={isQRDialogOpen} onOpenChange={setIsQRDialogOpen}>
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode size={20} />
+              Chọn Tài Khoản Ngân Hàng
+            </DialogTitle>
+            <DialogDescription>
+              Chọn tài khoản ngân hàng để hiển thị QR code thanh toán
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {shopInfo?.bankAccounts && shopInfo.bankAccounts.length > 0 ? (
+              shopInfo.bankAccounts.map((account) => {
+                const isSelected = selectedBankAccount?.id === account.id;
+                return (
+                  <div
+                    key={account.id}
+                    onClick={() => {
+                      setSelectedBankAccount(account);
+                      setIsQRDialogOpen(false);
+                    }}
+                    className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-purple-500 bg-purple-50 shadow-md'
+                        : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {getBankIconUrl(account.bankName) && (
+                        <img 
+                          src={getBankIconUrl(account.bankName)} 
+                          alt={account.bankName}
+                          className="w-10 h-10 object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      )}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-gray-900">{account.bankName}</p>
+                          {account.isDefault && (
+                            <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-300">
+                              Mặc định
+                            </Badge>
+                          )}
+                          {isSelected && (
+                            <Badge variant="outline" className="text-xs bg-purple-100 text-purple-700 border-purple-300">
+                              Đang chọn
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 font-mono mt-1">{account.accountNumber}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{account.accountHolder}</p>
+                      </div>
+                      {isSelected && (
+                        <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
+                          <div className="w-2 h-2 rounded-full bg-white" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center py-8">
+                <Building2 className="mx-auto text-gray-400 mb-3" size={48} />
+                <p className="text-gray-500 font-medium mb-1">Chưa có tài khoản ngân hàng</p>
+                <p className="text-sm text-gray-400">
+                  Vui lòng thêm tài khoản ngân hàng trong cài đặt cửa hàng
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsQRDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Purchase History Dialog */}
+      <Dialog open={isPurchaseHistoryDialogOpen} onOpenChange={setIsPurchaseHistoryDialogOpen}>
+        <DialogContent className="!max-w-6xl !w-[95vw] !h-[85vh] !flex !flex-col !grid-cols-none !p-6" style={{ display: 'flex', flexDirection: 'column', maxWidth: '1152px', width: '95vw', height: '85vh', maxHeight: '85vh' }}>
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt size={20} />
+              Lịch Sử Mua Hàng
+            </DialogTitle>
+            <DialogDescription>
+              {selectedCustomerForHistory && `Khách hàng: ${selectedCustomerForHistory.name}`}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-hidden flex flex-col min-h-0 mt-4" style={{ minHeight: 0, flex: '1 1 auto', overflow: 'hidden' }}>
+            {selectedCustomerForHistory && (() => {
+              const customerInvoices = invoices
+                .filter(inv => inv.customerId === selectedCustomerForHistory.id)
+                .sort((a, b) => new Date(b.date + 'T' + b.time).getTime() - new Date(a.date + 'T' + a.time).getTime());
+
+              const getPaymentMethodLabel = (method: string) => {
+                const labels: Record<string, string> = {
+                  cash: 'Tiền mặt',
+                  card: 'Thẻ',
+                  transfer: 'Chuyển khoản',
+                  debt: 'Nợ',
+                };
+                return labels[method] || method;
+              };
+
+              return customerInvoices.length > 0 ? (
+                <div className="border rounded-lg overflow-hidden flex-1 flex flex-col" style={{ minHeight: 0, flex: '1 1 auto', display: 'flex', flexDirection: 'column' }}>
+                  <div className="overflow-y-auto overflow-x-auto flex-1" style={{ minHeight: 0, overflowY: 'auto', overflowX: 'auto' }}>
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-white z-10 border-b shadow-sm">
+                        <TableRow>
+                          <TableHead className="px-4 py-3 font-semibold text-gray-900 min-w-[150px] whitespace-nowrap">Mã hóa đơn</TableHead>
+                          <TableHead className="px-4 py-3 font-semibold text-gray-900 min-w-[150px] whitespace-nowrap">Ngày giờ</TableHead>
+                          <TableHead className="px-4 py-3 font-semibold text-gray-900 min-w-[100px] whitespace-nowrap">Số mặt hàng</TableHead>
+                          <TableHead className="px-4 py-3 font-semibold text-gray-900 min-w-[150px] text-right whitespace-nowrap">Tạm tính</TableHead>
+                          <TableHead className="px-4 py-3 font-semibold text-gray-900 min-w-[150px] text-right whitespace-nowrap">Giảm giá</TableHead>
+                          <TableHead className="px-4 py-3 font-semibold text-gray-900 min-w-[150px] text-right whitespace-nowrap">Tổng tiền</TableHead>
+                          <TableHead className="px-4 py-3 font-semibold text-gray-900 min-w-[120px] whitespace-nowrap">Thanh toán</TableHead>
+                          <TableHead className="px-4 py-3 font-semibold text-gray-900 min-w-[150px] text-center whitespace-nowrap">Thao tác</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {customerInvoices.map((invoice) => (
+                          <TableRow key={invoice.id} className="hover:bg-gray-50 transition-colors">
+                            <TableCell className="px-4 py-3 whitespace-nowrap">
+                              <code className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">
+                                {invoice.invoiceCode || invoice.id}
+                              </code>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm">
+                                <div>{new Date(invoice.date).toLocaleDateString('vi-VN')}</div>
+                                <div className="text-gray-500">{invoice.time}</div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 whitespace-nowrap">
+                              <span className="text-sm">{invoice.items.length} mặt hàng</span>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-right whitespace-nowrap">
+                              <span className="text-sm">{invoice.subtotal.toLocaleString('vi-VN')}₫</span>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-right whitespace-nowrap">
+                              <span className="text-sm text-green-600">
+                                -{((invoice.promotionDiscount || 0) + (invoice.voucherDiscount || 0) + invoice.discount).toLocaleString('vi-VN')}₫
+                              </span>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-right whitespace-nowrap">
+                              <span className="text-sm font-bold text-gray-900">{invoice.total.toLocaleString('vi-VN')}₫</span>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 whitespace-nowrap">
+                              <Badge variant="outline">{getPaymentMethodLabel(invoice.paymentMethod)}</Badge>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedInvoiceForView(invoice);
+                                    setIsInvoiceDetailDialogOpen(true);
+                                  }}
+                                >
+                                  <Eye size={14} className="mr-1" />
+                                  Chi tiết
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 flex-1 flex items-center justify-center">
+                  <div>
+                    <Receipt size={48} className="mx-auto text-gray-300 mb-4" />
+                    <p className="text-gray-500">Chưa có lịch sử mua hàng</p>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          <DialogFooter className="flex-shrink-0 mt-4">
+            <Button variant="outline" onClick={() => setIsPurchaseHistoryDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Detail Dialog */}
+      <Dialog open={isInvoiceDetailDialogOpen} onOpenChange={setIsInvoiceDetailDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Chi Tiết Hóa Đơn</DialogTitle>
+            <DialogDescription>
+              {selectedInvoiceForView && `Mã hóa đơn: ${selectedInvoiceForView.invoiceCode || selectedInvoiceForView.id}`}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedInvoiceForView && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600">Ngày:</span>
+                  <span className="ml-2 font-medium">{new Date(selectedInvoiceForView.date).toLocaleDateString('vi-VN')}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Giờ:</span>
+                  <span className="ml-2 font-medium">{selectedInvoiceForView.time}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Phương thức thanh toán:</span>
+                  <span className="ml-2 font-medium">
+                    {(() => {
+                      const labels: Record<string, string> = {
+                        cash: 'Tiền mặt',
+                        card: 'Thẻ',
+                        transfer: 'Chuyển khoản',
+                        debt: 'Nợ',
+                      };
+                      return labels[selectedInvoiceForView.paymentMethod] || selectedInvoiceForView.paymentMethod;
+                    })()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h3 className="font-semibold mb-3">Danh sách sản phẩm</h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Sản phẩm</TableHead>
+                      <TableHead className="text-right">Số lượng</TableHead>
+                      <TableHead className="text-right">Đơn giá</TableHead>
+                      <TableHead className="text-right">Thành tiền</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedInvoiceForView.items.map((item: any, index: number) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{item.name}</p>
+                            {item.unit && (
+                              <p className="text-xs text-gray-500">Đơn vị: {item.unit}</p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">{item.quantity}</TableCell>
+                        <TableCell className="text-right">{item.price.toLocaleString('vi-VN')}₫</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {(item.quantity * item.price).toLocaleString('vi-VN')}₫
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="border-t pt-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Tạm tính:</span>
+                  <span className="font-medium">{selectedInvoiceForView.subtotal.toLocaleString('vi-VN')}₫</span>
+                </div>
+                {(selectedInvoiceForView.promotionDiscount && selectedInvoiceForView.promotionDiscount > 0) && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>Giảm khuyến mãi:</span>
+                    <span className="font-medium">-{selectedInvoiceForView.promotionDiscount.toLocaleString('vi-VN')}₫</span>
+                  </div>
+                )}
+                {(selectedInvoiceForView.voucherDiscount && selectedInvoiceForView.voucherDiscount > 0) && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>Giảm mã giảm giá:</span>
+                    <span className="font-medium">-{selectedInvoiceForView.voucherDiscount.toLocaleString('vi-VN')}₫</span>
+                  </div>
+                )}
+                {selectedInvoiceForView.discount > 0 && (!selectedInvoiceForView.promotionDiscount || selectedInvoiceForView.promotionDiscount === 0) && (!selectedInvoiceForView.voucherDiscount || selectedInvoiceForView.voucherDiscount === 0) && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>Giảm giá:</span>
+                    <span className="font-medium">-{selectedInvoiceForView.discount.toLocaleString('vi-VN')}₫</span>
+                  </div>
+                )}
+                <div className="flex justify-between pt-3 border-t-2 border-gray-300">
+                  <div>
+                    <p className="text-lg font-bold text-gray-900">Tổng tiền</p>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{selectedInvoiceForView.total.toLocaleString('vi-VN')}₫</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsInvoiceDetailDialogOpen(false)}>
+              Đóng
+            </Button>
+            {selectedInvoiceForView && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPrintInvoice(selectedInvoiceForView);
+                  setIsReceiptOpen(true);
+                  setIsInvoiceDetailDialogOpen(false);
+                }}
+              >
+                <Printer size={16} className="mr-2" />
+                In hóa đơn
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Receipt Print Dialog */}
+      {printInvoice && shopInfo && (
+        <InvoiceReceipt
+          invoice={{
+            id: printInvoice.id,
+            invoiceCode: printInvoice.invoiceCode,
+            date: printInvoice.date,
+            time: printInvoice.time,
+            items: printInvoice.items.map((item: any) => ({
+              productName: item.name,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+            subtotal: printInvoice.subtotal,
+            discount: printInvoice.discount,
+            promotionDiscount: printInvoice.promotionDiscount,
+            voucherDiscount: printInvoice.voucherDiscount,
+            total: printInvoice.total,
+            paymentMethod: printInvoice.paymentMethod === 'debt' ? 'cash' : (printInvoice.paymentMethod === 'card' ? 'card' : printInvoice.paymentMethod === 'transfer' ? 'transfer' : 'cash'),
+            customerName: printInvoice.customerName,
+            voucherCode: printInvoice.voucherCode,
+          }}
+          shopInfo={{
+            name: shopInfo.name || 'Shop',
+            address: shopInfo.address || '',
+            phone: shopInfo.phone || '',
+            taxCode: shopInfo.taxCode,
+          }}
+          isOpen={isReceiptOpen}
+          onClose={() => {
+            setIsReceiptOpen(false);
+            setPrintInvoice(null);
+          }}
+        />
+      )}
 
       <AlertComponent />
     </div>

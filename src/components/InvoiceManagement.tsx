@@ -4,7 +4,7 @@ import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
-import { Search, Eye, FileText, Calendar, DollarSign, ArrowUpDown, X, Printer, Loader2, Tag, User, Clock, ChevronLeft, ChevronRight, Receipt, Wallet, Building2, RefreshCw, QrCode } from 'lucide-react';
+import { Search, Eye, FileText, Calendar, DollarSign, ArrowUpDown, X, Printer, Loader2, Tag, User, Clock, ChevronLeft, ChevronRight, Receipt, Wallet, Building2, RefreshCw, QrCode, TrendingUp } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { InvoiceReceipt } from './InvoiceReceipt';
 import { useInvoices, Invoice } from '../hooks/useInvoices';
@@ -94,7 +94,7 @@ export function InvoiceManagement() {
 
     const params = new URLSearchParams({
       acc: account.accountNumber,
-      bank: bankCode,
+      bank: bankCode || '',
       amount: amount.toString(),
       des: description,
     });
@@ -181,6 +181,14 @@ export function InvoiceManagement() {
     [filteredInvoices, totalRevenue]
   );
 
+  // Tính tổng số dư nợ còn thiếu (chỉ tính những khách hàng có debtAmount > 0)
+  const totalDebt = useMemo(() => 
+    customers
+      .filter(c => c.debtAmount !== undefined && c.debtAmount > 0)
+      .reduce((sum, c) => sum + (c.debtAmount || 0), 0),
+    [customers]
+  );
+
   const uniqueDates = useMemo(() => 
     Array.from(new Set(invoices.map(inv => inv.date))).sort().reverse(),
     [invoices]
@@ -194,48 +202,59 @@ export function InvoiceManagement() {
 
       <div className="p-6 space-y-6 overflow-auto">
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-                <FileText className="text-blue-600" size={24} />
+        <div className="flex gap-3 overflow-x-auto">
+          <Card className="p-4 flex-shrink-0 min-w-[180px]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <FileText className="text-blue-600" size={20} />
               </div>
-              <div>
-                <p className="text-gray-600">Tổng hóa đơn</p>
-                <p className="text-gray-900">{filteredInvoices.length}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-                <DollarSign className="text-green-600" size={24} />
-              </div>
-              <div>
-                <p className="text-gray-600">Tổng doanh thu</p>
-                <p className="text-gray-900">{totalRevenue.toLocaleString('vi-VN')}₫</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-600">Tổng hóa đơn</p>
+                <p className="text-sm font-semibold text-gray-900">{filteredInvoices.length}</p>
               </div>
             </div>
           </Card>
-          <Card className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center">
-                <DollarSign className="text-purple-600" size={24} />
+          <Card className="p-4 flex-shrink-0 min-w-[180px]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <DollarSign className="text-green-600" size={20} />
               </div>
-              <div>
-                <p className="text-gray-600">Trung bình đơn</p>
-                <p className="text-gray-900">{averageOrder.toLocaleString('vi-VN')}₫</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-600">Tổng doanh thu</p>
+                <p className="text-sm font-semibold text-gray-900">{totalRevenue.toLocaleString('vi-VN')}₫</p>
               </div>
             </div>
           </Card>
-          <Card className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center">
-                <DollarSign className="text-orange-600" size={24} />
+          <Card className="p-4 flex-shrink-0 min-w-[180px]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                <DollarSign className="text-purple-600" size={20} />
               </div>
-              <div>
-                <p className="text-gray-600">Tổng giảm giá</p>
-                <p className="text-gray-900">{totalDiscount.toLocaleString('vi-VN')}₫</p>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-600">Trung bình đơn</p>
+                <p className="text-sm font-semibold text-gray-900">{averageOrder.toLocaleString('vi-VN')}₫</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-4 flex-shrink-0 min-w-[180px]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <DollarSign className="text-orange-600" size={20} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-600">Tổng giảm giá</p>
+                <p className="text-sm font-semibold text-gray-900">{totalDiscount.toLocaleString('vi-VN')}₫</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-4 flex-shrink-0 min-w-[180px]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <TrendingUp className="text-red-600" size={20} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-600">Tổng dư nợ</p>
+                <p className="text-sm font-semibold text-gray-900">{totalDebt.toLocaleString('vi-VN')}₫</p>
               </div>
             </div>
           </Card>
@@ -773,9 +792,33 @@ export function InvoiceManagement() {
       </Dialog>
 
       {/* Receipt Print Dialog */}
-      {printInvoice && (
+      {printInvoice && shopInfo && (
         <InvoiceReceipt
-          invoice={printInvoice}
+          invoice={{
+            id: printInvoice.id,
+            invoiceCode: printInvoice.invoiceCode,
+            date: printInvoice.date,
+            time: printInvoice.time,
+            items: printInvoice.items.map((item: any) => ({
+              productName: item.name || item.productName,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+            subtotal: printInvoice.subtotal,
+            discount: printInvoice.discount,
+            promotionDiscount: printInvoice.promotionDiscount,
+            voucherDiscount: printInvoice.voucherDiscount,
+            total: printInvoice.total,
+            paymentMethod: printInvoice.paymentMethod === 'debt' ? 'cash' : (printInvoice.paymentMethod === 'card' ? 'card' : printInvoice.paymentMethod === 'transfer' ? 'transfer' : 'cash'),
+            customerName: printInvoice.customerName,
+            voucherCode: printInvoice.voucherCode,
+          }}
+          shopInfo={{
+            name: shopInfo.name || 'Shop',
+            address: shopInfo.address || '',
+            phone: shopInfo.phone || '',
+            taxCode: shopInfo.taxCode,
+          }}
           isOpen={isReceiptOpen}
           onClose={() => {
             setIsReceiptOpen(false);

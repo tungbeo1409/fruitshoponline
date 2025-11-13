@@ -1444,7 +1444,7 @@ export function POS() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">Không chọn</SelectItem>
-                  {customers.map(customer => (
+                  {customers.filter(c => c.isActive !== false).map(customer => (
                     <SelectItem key={customer.id} value={customer.id}>
                       <div className="flex flex-col">
                         <span>{customer.name}</span>
