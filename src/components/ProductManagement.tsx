@@ -8,7 +8,7 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
-import { Search, Plus, Edit, Trash2, Package, Filter, ArrowUpDown, X, Loader2, MoreVertical, PackagePlus } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Package, Filter, ArrowUpDown, X, Loader2, MoreVertical, PackagePlus, AlertTriangle } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Checkbox } from './ui/checkbox';
@@ -468,8 +468,20 @@ export function ProductManagement() {
               </div>
             ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredProducts.map(product => (
-                <Card key={product.id} className="overflow-hidden flex flex-col">
+              {filteredProducts.map(product => {
+                const profit = product.price - product.importPrice;
+                const hasNegativeProfit = profit < 0;
+                const isLowStock = product.stock < 10;
+                const hasWarning = hasNegativeProfit || isLowStock;
+                
+                return (
+                <Card 
+                  key={product.id} 
+                  className={`overflow-hidden flex flex-col ${
+                    hasWarning ? '!bg-yellow-50 !border-yellow-200' : ''
+                  }`}
+                  style={hasWarning ? { backgroundColor: '#fefce8', borderColor: '#fde047' } : undefined}
+                >
                   <div className="relative h-48 bg-gray-100">
                     <ImageWithFallback
                       src={product.image}
@@ -479,7 +491,29 @@ export function ProductManagement() {
                   </div>
                   <div className="p-4 flex-1 flex flex-col">
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <h3 className="text-gray-900 flex-1">{product.name}</h3>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-gray-900">{product.name}</h3>
+                          {hasNegativeProfit && (
+                            <span 
+                              className="text-xs !text-red-600 flex items-center gap-1 whitespace-nowrap font-medium"
+                              style={{ color: '#dc2626' }}
+                            >
+                              <AlertTriangle size={12} className="text-red-600" style={{ color: '#dc2626' }} />
+                              Sản phẩm này có lợi nhuận âm, điều chỉnh lại giá bán
+                            </span>
+                          )}
+                          {isLowStock && (
+                            <span 
+                              className="text-xs !text-red-600 flex items-center gap-1 whitespace-nowrap font-medium"
+                              style={{ color: '#dc2626' }}
+                            >
+                              <AlertTriangle size={12} className="text-red-600" style={{ color: '#dc2626' }} />
+                              Hàng sắp hết
+                            </span>
+                          )}
+                        </div>
+                      </div>
                       <Badge variant="secondary" className="shrink-0">{product.category}</Badge>
                     </div>
                     
@@ -538,7 +572,8 @@ export function ProductManagement() {
                     </div>
                   </div>
                 </Card>
-              ))}
+                );
+              })}
             </div>
             )}
         </div>
