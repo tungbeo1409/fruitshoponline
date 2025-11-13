@@ -49,7 +49,7 @@ export interface Invoice {
   promotionDiscount?: number; // Giảm giá từ khuyến mãi
   voucherDiscount?: number; // Giảm giá từ voucher
   total: number;
-  paymentMethod: 'cash' | 'card' | 'transfer';
+  paymentMethod: 'cash' | 'card' | 'transfer' | 'debt';
   customerName?: string;
   customerId?: string;
   voucherCode?: string; // Deprecated: giữ lại để backward compatibility

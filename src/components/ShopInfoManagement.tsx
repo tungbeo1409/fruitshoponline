@@ -49,9 +49,15 @@ export function ShopInfoManagement() {
         const response = await fetch('https://qr.sepay.vn/banks.json');
         const data = await response.json();
         if (data.data && Array.isArray(data.data)) {
-          // Filter only supported banks
-          const supportedBanks = data.data.filter((bank: BankInfo) => bank.supported);
-          setBanks(supportedBanks);
+          // Hiển thị tất cả ngân hàng, sắp xếp: supported trước, sau đó theo tên
+          const sortedBanks = [...data.data].sort((a, b) => {
+            // Supported banks first
+            if (a.supported && !b.supported) return -1;
+            if (!a.supported && b.supported) return 1;
+            // Then sort by name
+            return a.name.localeCompare(b.name, 'vi');
+          });
+          setBanks(sortedBanks);
         }
       } catch (error) {
         console.error('Error fetching banks:', error);

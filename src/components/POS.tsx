@@ -3,7 +3,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { Search, Plus, Minus, Trash2, ShoppingCart, Filter, ArrowUpDown, X, CreditCard, Wallet, Building2, User, Tag, Ticket, Layers, QrCode, RefreshCw } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, ShoppingCart, Filter, ArrowUpDown, X, CreditCard, Wallet, Building2, User, Tag, Ticket, Layers, QrCode, RefreshCw, Receipt } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Label } from './ui/label';
@@ -44,7 +44,7 @@ export function POS() {
   const { products, loading: productsLoading, updateProduct } = useProducts();
   const { promotions, usePromotion } = usePromotions();
   const { vouchers, useVoucher } = useVouchers();
-  const { customers, addCustomer } = useCustomers();
+  const { customers, addCustomer, updateCustomer } = useCustomers();
   const { addInvoice, invoices } = useInvoices();
   const { shopInfo, updateShopInfo } = useShopInfo();
   
@@ -139,7 +139,7 @@ export function POS() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'name' | 'price-asc' | 'price-desc' | 'stock'>('name');
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'debt'>('cash');
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [currentInvoice, setCurrentInvoice] = useState<any>(null);
   const [selectedBankAccount, setSelectedBankAccount] = useState<BankAccount | null>(null);
@@ -192,6 +192,13 @@ export function POS() {
       setSelectedBankAccount(defaultBankAccount);
     }
   }, [isPaymentDialogOpen, paymentMethod, defaultBankAccount, selectedBankAccount]);
+
+  // Reset payment method to cash nếu chọn 'debt' nhưng không có khách hàng
+  useEffect(() => {
+    if (paymentMethod === 'debt' && !selectedCustomerId && !newCustomerName?.trim()) {
+      setPaymentMethod('cash');
+    }
+  }, [paymentMethod, selectedCustomerId, newCustomerName]);
 
   // Get bank icon URL
   const getBankIconUrl = (bankName: string): string => {
@@ -864,6 +871,10 @@ export function POS() {
         invoiceData.bankAccountSnapshot.qrDescription = `Hóa đơn ${invoiceCode}: THANH TOAN HOA QUA ${shopName}`;
       }
 
+      // Xử lý thanh toán nợ: cập nhật dư nợ của khách hàng
+      // Lưu ý: Cần cập nhật sau khi tạo invoice để có invoiceCode
+      // Logic này sẽ được xử lý sau khi invoice được tạo thành công
+
       // Lưu hóa đơn vào Firestore
       let invoiceId: string;
       try {
@@ -871,12 +882,133 @@ export function POS() {
         invoiceId = await addInvoice(invoiceData);
         console.log('Invoice created with ID:', invoiceId, 'Invoice Code:', invoiceCode);
         
+        // Nếu là hóa đơn nợ, cập nhật dư nợ và danh sách hóa đơn nợ của khách hàng
+        if (paymentMethod === 'debt' && finalCustomerId) {
+          try {
+            // Tìm customer trong array hoặc fetch từ Firestore nếu là khách hàng mới
+            let customer = customers.find(c => c.id === finalCustomerId);
+            
+            // Nếu không tìm thấy (khách hàng mới), lấy thông tin từ Firestore
+            if (!customer) {
+              // Khách hàng mới, dư nợ ban đầu là 0
+              const currentDebt = 0;
+              const newDebtAmount = currentDebt + total; // Cộng tổng tiền vào nợ
+              
+              // Tạo lịch sử nợ mới
+              const newHistoryEntry: any = {
+                id: Date.now().toString(),
+                newAmount: newDebtAmount,
+                changeAmount: total,
+                action: 'add',
+                note: `Nợ hóa đơn ${invoiceCode}`,
+                createdAt: new Date(),
+              };
+              
+              // Cập nhật dư nợ, lịch sử và danh sách hóa đơn nợ
+              await updateCustomer(finalCustomerId, {
+                debtAmount: newDebtAmount,
+                debtHistory: [newHistoryEntry],
+                debtInvoiceIds: [invoiceId],
+              });
+            } else {
+              // Khách hàng đã tồn tại
+              const currentDebt = customer.debtAmount || 0;
+              const newDebtAmount = currentDebt + total; // Cộng tổng tiền vào nợ
+              
+              // Tạo lịch sử nợ mới
+              const newHistoryEntry: any = {
+                id: Date.now().toString(),
+                newAmount: newDebtAmount,
+                changeAmount: total,
+                action: 'add',
+                note: `Nợ hóa đơn ${invoiceCode}`,
+                createdAt: new Date(),
+              };
+              
+              // Chỉ thêm previousAmount nếu không phải undefined
+              if (currentDebt !== undefined && currentDebt !== 0) {
+                newHistoryEntry.previousAmount = currentDebt;
+              }
+              
+              // Cập nhật lịch sử (làm sạch các entry cũ để loại bỏ undefined)
+              const existingHistory = (customer.debtHistory || []).map((entry: any) => {
+                const cleaned: any = {
+                  id: entry.id,
+                  newAmount: entry.newAmount,
+                  changeAmount: entry.changeAmount,
+                  action: entry.action,
+                  createdAt: entry.createdAt,
+                };
+                if (entry.previousAmount !== undefined) {
+                  cleaned.previousAmount = entry.previousAmount;
+                }
+                if (entry.note) {
+                  cleaned.note = entry.note;
+                }
+                return cleaned;
+              });
+              
+              const updatedHistory = [newHistoryEntry, ...existingHistory];
+              
+              // Cập nhật danh sách hóa đơn nợ
+              const existingDebtInvoiceIds = customer.debtInvoiceIds || [];
+              const updatedDebtInvoiceIds = existingDebtInvoiceIds.includes(invoiceId) 
+                ? existingDebtInvoiceIds 
+                : [...existingDebtInvoiceIds, invoiceId];
+              
+              // Cập nhật dư nợ, lịch sử và danh sách hóa đơn nợ
+              await updateCustomer(finalCustomerId, {
+                debtAmount: newDebtAmount,
+                debtHistory: updatedHistory,
+                debtInvoiceIds: updatedDebtInvoiceIds,
+              });
+            }
+          } catch (debtError: any) {
+            console.error('Error updating customer debt:', debtError);
+            // Không block việc tạo hóa đơn nếu chỉ lỗi cập nhật nợ
+            await alert({
+              title: 'Cảnh báo',
+              message: 'Hóa đơn đã được tạo nhưng không thể cập nhật dư nợ. Vui lòng kiểm tra lại.',
+              variant: 'warning',
+            });
+          }
+        }
+        
         // Cập nhật counter trong shopInfo
         try {
           await updateShopInfo({ invoiceCounter: nextCounter });
         } catch (counterError) {
           console.error('Error updating invoice counter:', counterError);
           // Không throw error vì invoice đã được tạo thành công
+        }
+        
+        // Cập nhật thống kê mua hàng của khách hàng (cho tất cả các hóa đơn, kể cả nợ)
+        if (finalCustomerId) {
+          try {
+            // Tìm customer trong array hoặc sử dụng thông tin mặc định nếu là khách hàng mới
+            let customer = customers.find(c => c.id === finalCustomerId);
+            
+            // Nếu không tìm thấy (khách hàng mới), sử dụng giá trị mặc định
+            const currentTotalSpent = customer?.totalSpent || 0;
+            const currentPurchaseCount = customer?.purchaseCount || 0;
+            const newTotalSpent = currentTotalSpent + total;
+            const newPurchaseCount = currentPurchaseCount + 1;
+            
+            // Tính tần suất mua hàng: số lần mua / số ngày từ ngày tạo đến hiện tại
+            const createdAt = customer?.createdAt ? new Date(customer.createdAt) : now; // Nếu là khách hàng mới, dùng thời gian hiện tại
+            const daysSinceCreation = Math.max(1, Math.ceil((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24)));
+            const newPurchaseFrequency = newPurchaseCount / daysSinceCreation;
+            
+            await updateCustomer(finalCustomerId, {
+              totalSpent: newTotalSpent,
+              purchaseCount: newPurchaseCount,
+              purchaseFrequency: newPurchaseFrequency,
+              lastPurchaseDate: now,
+            });
+          } catch (statsError) {
+            console.error('Error updating customer purchase statistics:', statsError);
+            // Không block việc tạo hóa đơn nếu chỉ lỗi cập nhật thống kê
+          }
         }
         
         // Clear temp invoice ID after successful creation
@@ -1816,6 +1948,45 @@ export function POS() {
                     </div>
                   </div>
                 </div>
+                
+                {/* Debt Payment Method - Only show when customer is selected */}
+                {(selectedCustomerId || newCustomerName?.trim()) && (
+                  <div
+                    onClick={() => {
+                      // Đảm bảo có khách hàng trước khi chọn nợ
+                      if (!selectedCustomerId && !newCustomerName?.trim()) {
+                        return;
+                      }
+                      setPaymentMethod('debt');
+                    }}
+                    className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all ${
+                      paymentMethod === 'debt' 
+                        ? 'bg-orange-100 border-2 border-orange-500 shadow-md ring-2 ring-orange-200' 
+                        : 'bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                      paymentMethod === 'debt' 
+                        ? 'border-orange-600 bg-orange-600 shadow-sm' 
+                        : 'border-gray-400'
+                    }`}>
+                      {paymentMethod === 'debt' && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 flex-1">
+                      <Receipt className={paymentMethod === 'debt' ? 'text-orange-700' : 'text-orange-600'} size={20} />
+                      <div>
+                        <p className={`font-medium ${paymentMethod === 'debt' ? 'text-orange-900' : 'text-gray-900'}`}>
+                          Nợ
+                        </p>
+                        <p className={`text-xs ${paymentMethod === 'debt' ? 'text-orange-700' : 'text-gray-500'}`}>
+                          Thanh toán sau (ghi nợ)
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
