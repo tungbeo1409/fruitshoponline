@@ -627,7 +627,25 @@ export function ProductManagement() {
                   value={productFormData.importPrice}
                   onChange={(e) => setProductFormData({ ...productFormData, importPrice: e.target.value })}
                   placeholder="0"
+                  className={(() => {
+                    const importPrice = Number(productFormData.importPrice) || 0;
+                    const price = Number(productFormData.price) || 0;
+                    return importPrice > 0 && price > 0 && price < importPrice ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : '';
+                  })()}
                 />
+                {(() => {
+                  const importPrice = Number(productFormData.importPrice) || 0;
+                  const price = Number(productFormData.price) || 0;
+                  if (importPrice > 0 && price > 0 && price < importPrice) {
+                    return (
+                      <div className="flex items-center gap-1 mt-1 text-xs text-red-600">
+                        <AlertTriangle size={12} />
+                        <span>Giá bán thấp hơn giá nhập! Sản phẩm sẽ bị lỗ.</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               <div>
                 <Label className="mb-2 block">Giá bán</Label>
@@ -636,28 +654,91 @@ export function ProductManagement() {
                   value={productFormData.price}
                   onChange={(e) => setProductFormData({ ...productFormData, price: e.target.value })}
                   placeholder="0"
+                  className={(() => {
+                    const importPrice = Number(productFormData.importPrice) || 0;
+                    const price = Number(productFormData.price) || 0;
+                    if (importPrice > 0 && price > 0) {
+                      if (price < importPrice) {
+                        return 'border-red-500 focus:border-red-500 focus:ring-red-500';
+                      }
+                      const marginPercent = ((price - importPrice) / importPrice) * 100;
+                      if (marginPercent < 10 && marginPercent >= 0) {
+                        return 'border-yellow-500 focus:border-yellow-500 focus:ring-yellow-500';
+                      }
+                    }
+                    return '';
+                  })()}
                 />
+                {(() => {
+                  const importPrice = Number(productFormData.importPrice) || 0;
+                  const price = Number(productFormData.price) || 0;
+                  if (importPrice > 0 && price > 0) {
+                    if (price < importPrice) {
+                      return (
+                        <div className="flex items-center gap-1 mt-1 text-xs text-red-600">
+                          <AlertTriangle size={12} />
+                          <span>Giá bán thấp hơn giá nhập! Sản phẩm sẽ bị lỗ.</span>
+                        </div>
+                      );
+                    }
+                    const marginPercent = ((price - importPrice) / importPrice) * 100;
+                    if (marginPercent < 10 && marginPercent >= 0) {
+                      return (
+                        <div className="flex items-center gap-1 mt-1 text-xs text-yellow-600">
+                          <AlertTriangle size={12} />
+                          <span>Lợi nhuận quá thấp ({marginPercent.toFixed(1)}%). Nên điều chỉnh lại giá bán.</span>
+                        </div>
+                      );
+                    }
+                  }
+                  return null;
+                })()}
               </div>
             </div>
             {(() => {
               const importPrice = Number(productFormData.importPrice) || 0;
               const price = Number(productFormData.price) || 0;
               const margin = price - importPrice;
-              const marginPercent = importPrice > 0 ? ((margin / importPrice) * 100).toFixed(2) : 0;
+              const marginPercent = importPrice > 0 ? ((margin / importPrice) * 100) : 0;
+              const hasWarning = margin < 0 || (marginPercent < 10 && marginPercent >= 0);
+              
               return (
-                <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-md border border-gray-200">
+                <div className={`grid grid-cols-2 gap-4 p-3 rounded-md border ${
+                  margin < 0 
+                    ? 'bg-red-50 border-red-200' 
+                    : marginPercent < 10 && marginPercent >= 0
+                    ? 'bg-yellow-50 border-yellow-200'
+                    : 'bg-gray-50 border-gray-200'
+                }`}>
                   <div>
                     <Label className="text-sm text-gray-600">Lợi nhuận</Label>
-                    <p className="text-lg font-semibold text-gray-900">
+                    <p className={`text-lg font-semibold ${
+                      margin < 0 ? 'text-red-600' : marginPercent < 10 && marginPercent >= 0 ? 'text-yellow-600' : 'text-gray-900'
+                    }`}>
                       {margin.toLocaleString('vi-VN')}₫
                     </p>
                   </div>
                   <div>
                     <Label className="text-sm text-gray-600">Tỷ lệ lợi nhuận</Label>
-                    <p className="text-lg font-semibold text-gray-900">
-                      {marginPercent}%
+                    <p className={`text-lg font-semibold ${
+                      margin < 0 ? 'text-red-600' : marginPercent < 10 && marginPercent >= 0 ? 'text-yellow-600' : 'text-gray-900'
+                    }`}>
+                      {marginPercent.toFixed(2)}%
                     </p>
                   </div>
+                  {hasWarning && (
+                    <div className="col-span-2 flex items-center gap-2 mt-2 pt-2 border-t border-current border-opacity-20">
+                      <AlertTriangle size={16} className={margin < 0 ? 'text-red-600' : 'text-yellow-600'} />
+                      <span className={`text-sm font-medium ${
+                        margin < 0 ? 'text-red-600' : 'text-yellow-600'
+                      }`}>
+                        {margin < 0 
+                          ? 'Cảnh báo: Sản phẩm này có lợi nhuận âm, điều chỉnh lại giá bán!'
+                          : 'Cảnh báo: Lợi nhuận quá thấp, nên điều chỉnh lại giá bán để đảm bảo hiệu quả kinh doanh.'
+                        }
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })()}

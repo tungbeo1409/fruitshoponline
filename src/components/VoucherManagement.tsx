@@ -122,6 +122,7 @@ export function VoucherManagement() {
   };
 
   const handleSave = async () => {
+    // Validation
     if (!formData.code || !formData.value || !formData.quantity || !formData.startDate || !formData.endDate) {
       await alert({
         title: 'Thông báo',
@@ -131,32 +132,138 @@ export function VoucherManagement() {
       return;
     }
 
-    try {
-      const voucherData = {
-      code: formData.code.toUpperCase(),
-      type: formData.type,
-      value: Number(formData.value),
-        minPurchase: Number(formData.minPurchase) || 0,
-      maxDiscount: formData.maxDiscount ? Number(formData.maxDiscount) : undefined,
-      quantity: Number(formData.quantity),
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-        productIds: formData.applyToAllProducts ? null : selectedProductIds,
-        customerIds: formData.applyToAllCustomers ? null : selectedCustomerIds,
-    };
-
-    if (editingVoucher) {
-        await updateVoucher(editingVoucher.id, voucherData);
-    } else {
-        await addVoucher(voucherData);
-    }
-
-    setIsDialogOpen(false);
-      setEditingVoucher(null);
-    } catch (error: any) {
+    // Validate value
+    const value = Number(formData.value);
+    if (isNaN(value) || value <= 0) {
       await alert({
         title: 'Lỗi',
-        message: 'Không thể lưu voucher. Vui lòng thử lại.',
+        message: 'Giá trị voucher phải lớn hơn 0!',
+        variant: 'danger',
+      });
+      return;
+    }
+
+    // Validate quantity
+    const quantity = Number(formData.quantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      await alert({
+        title: 'Lỗi',
+        message: 'Số lượng voucher phải lớn hơn 0!',
+        variant: 'danger',
+      });
+      return;
+    }
+
+    // Validate dates
+    if (formData.startDate > formData.endDate) {
+      await alert({
+        title: 'Lỗi',
+        message: 'Ngày kết thúc phải sau ngày bắt đầu!',
+        variant: 'danger',
+      });
+      return;
+    }
+
+    // Validate percent type
+    if (formData.type === 'percent' && value > 100) {
+      await alert({
+        title: 'Lỗi',
+        message: 'Giá trị phần trăm không được vượt quá 100%!',
+        variant: 'danger',
+      });
+      return;
+    }
+
+    // Validate selected products/customers
+    if (!formData.applyToAllProducts && selectedProductIds.length === 0) {
+      await alert({
+        title: 'Lỗi',
+        message: 'Vui lòng chọn ít nhất một sản phẩm hoặc chọn "Áp dụng cho tất cả sản phẩm"!',
+        variant: 'danger',
+      });
+      return;
+    }
+
+    if (!formData.applyToAllCustomers && selectedCustomerIds.length === 0) {
+      await alert({
+        title: 'Lỗi',
+        message: 'Vui lòng chọn ít nhất một khách hàng hoặc chọn "Áp dụng cho tất cả khách hàng"!',
+        variant: 'danger',
+      });
+      return;
+    }
+
+    // Check for duplicate code (only when creating new voucher)
+    if (!editingVoucher) {
+      const codeUpper = formData.code.toUpperCase().trim();
+      const existingVoucher = vouchers.find(v => v.code.toUpperCase() === codeUpper);
+      if (existingVoucher) {
+        await alert({
+          title: 'Lỗi',
+          message: `Mã voucher "${codeUpper}" đã tồn tại! Vui lòng chọn mã khác.`,
+          variant: 'danger',
+        });
+        return;
+      }
+    } else {
+      // When editing, check if code conflicts with other vouchers
+      const codeUpper = formData.code.toUpperCase().trim();
+      const existingVoucher = vouchers.find(v => v.id !== editingVoucher.id && v.code.toUpperCase() === codeUpper);
+      if (existingVoucher) {
+        await alert({
+          title: 'Lỗi',
+          message: `Mã voucher "${codeUpper}" đã tồn tại! Vui lòng chọn mã khác.`,
+          variant: 'danger',
+        });
+        return;
+      }
+    }
+
+    try {
+      // Build voucher data object, only include maxDiscount if it has a value
+      const voucherData: any = {
+        code: formData.code.toUpperCase().trim(),
+        type: formData.type,
+        value: value,
+        minPurchase: Number(formData.minPurchase) || 0,
+        quantity: quantity,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        productIds: formData.applyToAllProducts ? null : (selectedProductIds.length > 0 ? selectedProductIds : null),
+        customerIds: formData.applyToAllCustomers ? null : (selectedCustomerIds.length > 0 ? selectedCustomerIds : null),
+      };
+
+      // Only add maxDiscount if it has a value (not undefined)
+      if (formData.maxDiscount && formData.maxDiscount.trim() !== '') {
+        const maxDiscountValue = Number(formData.maxDiscount);
+        if (!isNaN(maxDiscountValue) && maxDiscountValue > 0) {
+          voucherData.maxDiscount = maxDiscountValue;
+        }
+      }
+
+      if (editingVoucher) {
+        await updateVoucher(editingVoucher.id, voucherData);
+        await alert({
+          title: 'Thành công',
+          message: 'Đã cập nhật voucher thành công!',
+          variant: 'success',
+        });
+      } else {
+        await addVoucher(voucherData);
+        await alert({
+          title: 'Thành công',
+          message: 'Đã tạo voucher thành công!',
+          variant: 'success',
+        });
+      }
+
+      setIsDialogOpen(false);
+      setEditingVoucher(null);
+    } catch (error: any) {
+      console.error('Error saving voucher:', error);
+      await alert({
+        title: 'Lỗi',
+        message: error.message || 'Không thể lưu voucher. Vui lòng thử lại.',
         variant: 'danger',
       });
     }

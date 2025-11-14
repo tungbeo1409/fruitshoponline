@@ -1388,7 +1388,43 @@ export function POS() {
                           >
                             <Minus size={14} />
                           </Button>
-                          <span className="w-12 text-center">{item.quantity}</span>
+                          <Input
+                            type="number"
+                            min="1"
+                            max={item.stock}
+                            value={item.quantity || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              // Cho phép nhập rỗng tạm thời khi đang gõ
+                              if (value === '') {
+                                setQuantity(item.id, 0, true);
+                                return;
+                              }
+                              const newQuantity = parseInt(value) || 0;
+                              if (newQuantity >= 0) {
+                                setQuantity(item.id, newQuantity, true);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              const newQuantity = parseInt(value) || 1;
+                              if (newQuantity < 1) {
+                                setQuantity(item.id, 1, false);
+                              } else if (newQuantity > item.stock) {
+                                setQuantity(item.id, item.stock, false);
+                              } else {
+                                setQuantity(item.id, newQuantity, false);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              // Cho phép Enter để xác nhận
+                              if (e.key === 'Enter') {
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            className="w-20 text-center font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            style={{ WebkitAppearance: 'textfield' }}
+                          />
                           <Button
                             size="sm"
                             variant="outline"

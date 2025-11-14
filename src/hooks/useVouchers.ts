@@ -90,14 +90,29 @@ export function useVouchers() {
       status = 'active';
     }
     
-    const newVoucher = {
-      ...voucher,
+    // Remove undefined fields to avoid Firestore errors
+    const cleanedVoucher: any = {
+      code: voucher.code,
+      type: voucher.type,
+      value: voucher.value,
+      minPurchase: voucher.minPurchase,
+      quantity: voucher.quantity,
+      startDate: voucher.startDate,
+      endDate: voucher.endDate,
+      productIds: voucher.productIds,
+      customerIds: voucher.customerIds,
       used: 0,
       status,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    const docRef = await addDoc(vouchersRef, newVoucher);
+    
+    // Only include maxDiscount if it's not undefined
+    if (voucher.maxDiscount !== undefined) {
+      cleanedVoucher.maxDiscount = voucher.maxDiscount;
+    }
+    
+    const docRef = await addDoc(vouchersRef, cleanedVoucher);
     return docRef.id;
   };
 
@@ -124,11 +139,26 @@ export function useVouchers() {
       }
     }
     
-    await updateDoc(voucherRef, {
-      ...voucher,
-      status,
+    // Remove undefined fields to avoid Firestore errors
+    const cleanedVoucher: any = {
       updatedAt: new Date(),
-    });
+    };
+    
+    // Only include fields that are not undefined
+    if (voucher.code !== undefined) cleanedVoucher.code = voucher.code;
+    if (voucher.type !== undefined) cleanedVoucher.type = voucher.type;
+    if (voucher.value !== undefined) cleanedVoucher.value = voucher.value;
+    if (voucher.minPurchase !== undefined) cleanedVoucher.minPurchase = voucher.minPurchase;
+    if (voucher.maxDiscount !== undefined) cleanedVoucher.maxDiscount = voucher.maxDiscount;
+    if (voucher.quantity !== undefined) cleanedVoucher.quantity = voucher.quantity;
+    if (voucher.used !== undefined) cleanedVoucher.used = voucher.used;
+    if (voucher.startDate !== undefined) cleanedVoucher.startDate = voucher.startDate;
+    if (voucher.endDate !== undefined) cleanedVoucher.endDate = voucher.endDate;
+    if (voucher.productIds !== undefined) cleanedVoucher.productIds = voucher.productIds;
+    if (voucher.customerIds !== undefined) cleanedVoucher.customerIds = voucher.customerIds;
+    if (status !== undefined) cleanedVoucher.status = status;
+    
+    await updateDoc(voucherRef, cleanedVoucher);
   };
 
   const deleteVoucher = async (id: string) => {
