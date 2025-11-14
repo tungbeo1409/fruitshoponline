@@ -1,9 +1,9 @@
 # Hướng dẫn Deploy lên GitHub Pages
 
-## Cách 1: Sử dụng GitHub Actions (Tự động)
+## Cách 1: Sử dụng GitHub Actions (Tự động) - Khuyến nghị
 
 1. **Tạo repository trên GitHub:**
-   - Tạo một repository mới trên GitHub
+   - Tạo một repository mới trên GitHub (ví dụ: `fruitshoponline`)
    - Đẩy code lên repository:
      ```bash
      git init
@@ -20,11 +20,15 @@
    - Lưu lại
 
 3. **Cập nhật base path trong vite.config.ts:**
-   - Nếu repository tên là `username.github.io`: giữ `base: '/'`
-   - Nếu repository tên khác (ví dụ: `fruit-shop`): đổi thành `base: '/fruit-shop/'`
+   - Nếu repository tên là `username.github.io`: đổi thành `base: '/'`
+   - Nếu repository tên khác (ví dụ: `fruitshoponline`): giữ `base: '/fruitshoponline/'`
+   - **Lưu ý:** Base path phải khớp với tên repository
 
 4. **Push code lên GitHub:**
-   - Mỗi lần push lên branch `main` hoặc `master`, GitHub Actions sẽ tự động build và deploy
+   - Mỗi lần push lên branch `main`, GitHub Actions sẽ tự động:
+     - Build project (tự động tạo file `404.html`)
+     - Deploy lên GitHub Pages
+   - Xem tiến trình deploy tại tab "Actions" trong repository
 
 ## Cách 2: Deploy thủ công
 
@@ -52,4 +56,6 @@
 - Nếu repository không phải là `username.github.io`, cần cập nhật `base` trong `vite.config.ts` thành tên repository
 - Đảm bảo Firebase config đã được cấu hình đúng
 - File `.env` không nên được commit (đã có trong .gitignore)
+- File `404.html` sẽ được tự động tạo khi build để xử lý SPA routing trên GitHub Pages
+- Sau khi build, file `dist/404.html` sẽ được tự động copy từ `index.html` để GitHub Pages có thể xử lý các route không tồn tại
 
